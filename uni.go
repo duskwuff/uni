@@ -168,7 +168,7 @@ func doString(s string) {
 func doBytes(b []byte) {
 	for i := 0; i < len(b); {
 		r, n := utf8.DecodeRune(b[i:])
-		if r == utf8.RuneError {
+		if r == utf8.RuneError && n == 1 {
 			fmt.Printf("\tU+????  (%02X)\n", b[i])
 		} else {
 			showPoint(r)
