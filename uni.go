@@ -13,10 +13,12 @@ import (
 
 	"golang.org/x/text/unicode/rangetable"
 	"golang.org/x/text/unicode/runenames"
+	"golang.org/x/text/width"
 )
 
 var (
 	flagC  = flag.Bool("c", false, "")
+	flagM  = flag.Bool("m", false, "")
 	flagN  = flag.Bool("n", false, "")
 	flagP  = flag.Bool("p", false, "")
 	flagX  = flag.Bool("x", false, "")
@@ -66,6 +68,7 @@ func usagefn() {
 		"  uni [-n] /regex/     search for codepoints with names matching regular expression /regex/\n" +
 		"  uni [-p] U+<xxxx>    display codepoint U+<xxxx>\n" +
 		"  uni [-c] <string>    display each codepoint in <string>\n" +
+		"  uni -m <lo>[-<hi>]   display a character map of a range\n" +
 		"  uni -x <hex>         decode UTF-8 string from <hex> and display codepoints if valid\n" +
 		"\n" +
 		"Other flags:\n" +
@@ -108,6 +111,8 @@ func main() {
 	switch {
 	case *flagC:
 		doString(arg)
+	case *flagM:
+		doMap(arg)
 	case *flagN:
 		doName(arg)
 	case *flagP:
@@ -120,7 +125,7 @@ func main() {
 	case strings.HasPrefix(arg, "/"): // regex search
 		doName(arg)
 
-	case strings.HasPrefix(arg, "U+"): // codepoint reference
+	case strings.HasPrefix(arg, "U+"), strings.HasPrefix(arg, "u+"): // codepoint reference
 		for _, arg := range flag.Args() {
 			doCodepoint(arg)
 		}
@@ -137,8 +142,62 @@ func main() {
 	}
 }
 
+func doMap(b string) {
+	var lower, upper int64
+	var err error
+	if strings.Contains(b, "-") {
+		bp := strings.SplitN(b, "-", 2)
+		lower, err = strconv.ParseInt(strings.Trim(bp[0], " "), 16, 32)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to parse %q: %s\n", b, err)
+			os.Exit(1)
+		}
+		upper, err = strconv.ParseInt(strings.Trim(bp[1], " "), 16, 32)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to parse %q: %s\n", b, err)
+			os.Exit(1)
+		}
+	} else {
+		lower, err = strconv.ParseInt(b, 16, 32)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to parse %q: %s\n", b, err)
+			os.Exit(1)
+		}
+		upper = lower + 256
+	}
+
+	// make allowances for ranges ending at xxxF
+	if upper&15 == 15 {
+		upper += 1
+	}
+
+	fmt.Println("        0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F")
+	fmt.Println("      ┌─────────────────────────────────────────────────────────────────")
+
+	for i := lower &^ 15; i < upper; i += 16 {
+		buf := fmt.Sprintf("%5s │", fmt.Sprintf("%x", i))
+		for j := int64(0); j < 16; j++ {
+			p := i + j
+			if p < lower || p > upper {
+				buf += "----"
+			} else {
+				var padding string
+				switch width.LookupRune(rune(p)).Kind() {
+				case width.EastAsianWide, width.EastAsianFullwidth:
+					// character took up two spaces, we only need to add one here
+					padding = " "
+				default:
+					padding = "  "
+				}
+				buf += fmt.Sprintf(" %1s%s", printableRune(rune(p)), padding)
+			}
+		}
+		fmt.Println(buf)
+	}
+}
+
 func doCodepoint(p string) {
-	if strings.HasPrefix(p, "U+") {
+	if strings.HasPrefix(p, "U+") || strings.HasPrefix(p, "u+") {
 		cp, err := strconv.ParseInt(p[2:], 16, 32)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "unable to parse %q: %s\n", p, err)
@@ -204,22 +263,27 @@ func doName(search string) {
 	)
 }
 
+func printableRune(r rune) string {
+	switch {
+	case unicode.Is(unicode.Variation_Selector, r):
+		// included in Mn but not what we wanted
+		return ""
+	case unicode.Is(unicode.Mn, r): // nonspacing combining marks, e.g. combining acute
+		return "\u25cc" + string(r) // U+25CC DOTTED CIRCLE
+	case unicode.IsPrint(r):
+		return string(r)
+	default:
+		return ""
+	}
+}
+
 func showPoint(r rune) {
 	if r > unicode.MaxRune {
 		fmt.Printf("\tU+%X is not a valid Unicode character\n", r)
 		return
 	}
 
-	ch := ""
-	switch {
-	case unicode.Is(unicode.Variation_Selector, r):
-		// included in Mn but not what we wanted
-	case unicode.Is(unicode.Mn, r): // nonspacing combining marks, e.g. combining acute
-		ch = "\u25cc" + string(r) // U+25CC DOTTED CIRCLE
-	case unicode.IsPrint(r):
-		ch = string(r)
-	}
-
+	ch := printableRune(r)
 	pt := fmt.Sprintf("%04X", r)
 
 	name := specialNames[r]
