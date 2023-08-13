@@ -1,5 +1,5 @@
 module github.com/duskwuff/uni
 
-go 1.20
+go 1.21
 
-require golang.org/x/text v0.9.0
+require golang.org/x/text v0.12.0

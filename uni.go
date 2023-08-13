@@ -145,6 +145,10 @@ func main() {
 func doMap(b string) {
 	var lower, upper int64
 	var err error
+	if b == "" {
+		fmt.Fprintf(os.Stderr, "need a character range to display a map\n")
+		os.Exit(1)
+	}
 	if strings.Contains(b, "-") {
 		bp := strings.SplitN(b, "-", 2)
 		lower, err = strconv.ParseInt(strings.Trim(bp[0], " "), 16, 32)
